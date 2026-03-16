@@ -9,18 +9,20 @@ use Tcds\Io\Ray\EventSubscriberMap;
 
 readonly class SequentialEventProcessor implements EventProcessor
 {
+    /**
+     * @param EventSubscriberMap<object> $subscribers
+     */
     public function __construct(private EventSubscriberMap $subscribers)
     {
     }
 
-    /**
-     * @param EventStore<object> $store
-     */
     #[Override] public function process(EventStore $store): void
     {
         while ($event = $store->next()) {
             foreach ($this->subscribers->of($event->type) as $subscriber) {
-                $subscriber($event);
+                if (is_callable($subscriber)) {
+                    $subscriber($event);
+                }
             }
         }
     }

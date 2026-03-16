@@ -20,6 +20,9 @@ readonly class RayEvent
     ) {
     }
 
+    /**
+     * @param array<string, mixed> $payload
+     */
     public static function create(
         string $type,
         array $payload,
@@ -35,6 +38,9 @@ readonly class RayEvent
         );
     }
 
+    /**
+     * @param array<string, mixed> $payload
+     */
     public static function retrieve(
         string $id,
         string $type,

@@ -24,6 +24,9 @@ class EventSubscriberMap
         $this->subscribers[$name][] = $subscriber;
     }
 
+    /**
+     * @param EventSubscriberMap<TEvent> $other
+     */
     public function merge(EventSubscriberMap $other): void
     {
         foreach ($other->subscribers as $name => $subscribers) {

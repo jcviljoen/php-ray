@@ -108,4 +108,39 @@ class EventSubscriberMapTest extends TestCase
         self::assertSame([ListenerA::class, ListenerB::class], $mapA->of('order.placed'));
         self::assertSame([ListenerB::class], $mapA->of('payment.failed'));
     }
+
+    public function test_merge_into_empty_map_copies_all_subscribers(): void
+    {
+        $mapA = new EventSubscriberMap();
+        $mapB = new EventSubscriberMap([
+            'order.placed' => [ListenerA::class],
+        ]);
+
+        $mapA->merge($mapB);
+
+        self::assertSame([ListenerA::class], $mapA->of('order.placed'));
+    }
+
+    public function test_merge_with_empty_map_leaves_target_unchanged(): void
+    {
+        $mapA = new EventSubscriberMap([
+            'order.placed' => [ListenerA::class],
+        ]);
+
+        $mapA->merge(new EventSubscriberMap());
+
+        self::assertSame([ListenerA::class], $mapA->of('order.placed'));
+    }
+
+    public function test_merge_does_not_mutate_the_source_map(): void
+    {
+        $mapA = new EventSubscriberMap();
+        $mapB = new EventSubscriberMap([
+            'order.placed' => [ListenerA::class],
+        ]);
+
+        $mapA->merge($mapB);
+
+        self::assertSame([ListenerA::class], $mapB->of('order.placed'));
+    }
 }

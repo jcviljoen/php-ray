@@ -99,7 +99,7 @@ readonly class SqlEventStore implements EventStore
 
     private function ensureOutboxSchema(): void
     {
-        $driver = $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $driver = $this->driverName();
 
         match ($driver) {
             'mysql' => MysqlEventStoreSchema::create($this->connection),
@@ -110,11 +110,17 @@ readonly class SqlEventStore implements EventStore
 
     private function lockingClause(): string
     {
-        $driver = $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME);
-
-        return match ($driver) {
+        return match ($this->driverName()) {
             'mysql' => 'FOR UPDATE SKIP LOCKED',
             default => '',
         };
+    }
+
+    private function driverName(): string
+    {
+        $driver = $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME);
+        assert(is_string($driver));
+
+        return $driver;
     }
 }

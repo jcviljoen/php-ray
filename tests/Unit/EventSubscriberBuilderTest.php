@@ -80,6 +80,31 @@ class EventSubscriberBuilderTest extends TestCase
         self::assertSame([ListenerA::class, ListenerB::class], $result->of('order.placed'));
     }
 
+    public function test_duplicate_callable_listeners_are_deduplicated(): void
+    {
+        $listener = fn () => null;
+
+        $result = EventSubscriberBuilder::create()
+            ->eventName('order.placed', [$listener])
+            ->eventName('order.placed', [$listener])
+            ->build();
+
+        self::assertCount(1, $result->of('order.placed'));
+    }
+
+    public function test_distinct_callable_listeners_are_not_deduplicated(): void
+    {
+        $a = fn () => null;
+        $b = fn () => null;
+
+        $result = EventSubscriberBuilder::create()
+            ->eventName('order.placed', [$a])
+            ->eventName('order.placed', [$b])
+            ->build();
+
+        self::assertCount(2, $result->of('order.placed'));
+    }
+
     public function test_create_returns_a_new_builder_instance(): void
     {
         $a = EventSubscriberBuilder::create();

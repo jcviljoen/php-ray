@@ -3,14 +3,13 @@
 namespace Tcds\Io\Ray;
 
 /**
- * @phpstan-import-type Subscriber from EventSubscriberMap
- *
  * @template TEvent of object
+ * @phpstan-type Subscriber = callable(TEvent $event): void | class-string
  */
 class EventSubscriberBuilder
 {
     /**
-     * @var array<non-empty-string, list<Subscriber>>
+     * @var array<string, list<Subscriber>>
      */
     private array $events = [];
 
@@ -24,14 +23,18 @@ class EventSubscriberBuilder
     }
 
     /**
-     * @param non-empty-string $name Plain, non-class event name.
-     * @param list<Subscriber> $listeners List of listener classes to register for the event.
+     * @param string $name Plain, non-class event name.
+     * @param list<Subscriber> $listeners List of listeners to register for the event.
      *
      * @return self<TEvent>
      */
     public function eventName(string $name, array $listeners): self
     {
-        $this->events[$name] = array_merge($this->events[$name] ?? [], array_flip($listeners));
+        foreach ($listeners as $listener) {
+            if (!in_array($listener, $this->events[$name] ?? [], true)) {
+                $this->events[$name][] = $listener;
+            }
+        }
 
         return $this;
     }
@@ -44,7 +47,12 @@ class EventSubscriberBuilder
      */
     public function listener(callable|string $listener, array $names = []): self
     {
-        array_map(fn(string $name) => $this->eventName($name, [$listener]), $names);
+        /** @var list<Subscriber> $single */
+        $single = [$listener];
+
+        foreach ($names as $name) {
+            $this->eventName($name, $single);
+        }
 
         return $this;
     }
@@ -55,8 +63,6 @@ class EventSubscriberBuilder
     public function build(): EventSubscriberMap
     {
         /** @var EventSubscriberMap<TEvent> */
-        return new EventSubscriberMap(
-            array_map(fn(array $listeners) => array_keys($listeners), $this->events),
-        );
+        return new EventSubscriberMap($this->events);
     }
 }
