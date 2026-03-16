@@ -4,6 +4,7 @@ namespace Test\Tcds\Io\Ray\Unit;
 
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use stdClass;
 use Tcds\Io\Ray\Infrastructure\DefaultHandlerResolver;
 use Test\Tcds\Io\Ray\_Fixtures\TrackingListener;
 
@@ -28,8 +29,8 @@ class DefaultHandlerResolverTest extends TestCase
     public function test_instantiates_class_string_and_returns_invocable(): void
     {
         $payload = (object) ['order_id' => 1];
-
         $resolved = $this->resolver->resolve(TrackingListener::class);
+
         $resolved($payload);
 
         self::assertInstanceOf(TrackingListener::class, $resolved);
@@ -40,6 +41,6 @@ class DefaultHandlerResolverTest extends TestCase
     {
         $this->expectException(RuntimeException::class);
 
-        $this->resolver->resolve(\stdClass::class);
+        $this->resolver->resolve(stdClass::class);
     }
 }

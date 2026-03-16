@@ -3,6 +3,7 @@
 namespace Test\Tcds\Io\Ray\Unit;
 
 use PHPUnit\Framework\TestCase;
+use stdClass;
 use Tcds\Io\Ray\EventPublisher;
 use Tcds\Io\Ray\EventSerializer;
 use Tcds\Io\Ray\EventStore;
@@ -13,7 +14,7 @@ class EventPublisherTest extends TestCase
 {
     public function test_publish_serializes_event_and_stores_it(): void
     {
-        $domainEvent = new \stdClass();
+        $domainEvent = new stdClass();
 
         $serializer = $this->createStub(EventSerializer::class);
         $serializer->method('serialize')->willReturn(new SerializedEvent('order.placed', ['order_id' => 1]));
@@ -35,7 +36,7 @@ class EventPublisherTest extends TestCase
 
         $store = $this->createStub(EventStore::class);
 
-        $id = new EventPublisher($store, $serializer)->publish(new \stdClass());
+        $id = new EventPublisher($store, $serializer)->publish(new stdClass());
 
         self::assertNotEmpty($id);
     }

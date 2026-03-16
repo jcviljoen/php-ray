@@ -4,6 +4,8 @@ namespace Test\Tcds\Io\Ray\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Tcds\Io\Ray\Infrastructure\PublicPropertiesSerializer;
+use Test\Tcds\Io\Ray\_Fixtures\EmptyEventStub;
+use Test\Tcds\Io\Ray\_Fixtures\OrderPlacedStub;
 
 class PublicPropertiesSerializerTest extends TestCase
 {
@@ -34,17 +36,4 @@ class PublicPropertiesSerializerTest extends TestCase
 
         self::assertSame([], $result->payload);
     }
-}
-
-readonly class OrderPlacedStub
-{
-    public function __construct(
-        public int $orderId,
-        public float $total,
-    ) {
-    }
-}
-
-readonly class EmptyEventStub
-{
 }
