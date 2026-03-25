@@ -14,6 +14,7 @@ Events are first written to a durable store (in-memory or SQL), then dispatched 
 - **Subscribe** to event types with any callable
 - **Process** queued events sequentially — each event is routed to every registered subscriber by type
 - **Two stores out of the box** — in-memory for tests/dev, SQL (MySQL / SQLite) for production
+- **Two processors out of the box** — standard (fail-fast for local/CI) and silent (log-and-continue for production)
 - **Outbox pattern** — events are marked `processed` only after they're successfully dequeued
 - **Scheduled delivery** — set `publishAt` in the future; the processor only picks up events whose time has come
 - **Worker-safe** — MySQL store uses `FOR UPDATE SKIP LOCKED` to allow multiple workers without double-processing
@@ -56,6 +57,8 @@ composer require tcds-io/php-ray
 | `EventPublisher` | Serializes a domain event and pushes it into the store, returning its ID |
 | `EventSubscriberMap` | Registry of `name → callable[]` mappings |
 | `EventProcessor` | Interface — drains the store and dispatches to subscribers |
+| `SequentialEventProcessor` | Built-in processor — dispatches events one by one; exceptions propagate (fail-fast) |
+| `SilentSequentialEventProcessor` | Built-in processor — same as above but catches per-listener failures and logs them via PSR-3 |
 | `EventSubscriberBuilder` | Fluent builder that produces a ready-to-use `EventSubscriberMap` |
 
 ---
@@ -63,12 +66,10 @@ composer require tcds-io/php-ray
 ## Quick start
 
 ```php
-use Carbon\CarbonImmutable;
 use Tcds\Io\Ray\EventPublisher;
 use Tcds\Io\Ray\EventSubscriberMap;
 use Tcds\Io\Ray\Infrastructure\InMemoryEventStore;
-use Tcds\Io\Ray\Infrastructure\PublicPropertiesSerializer;
-use Tcds\Io\Ray\Infrastructure\RawPayloadHydrator;
+use Tcds\Io\Ray\Infrastructure\JacksonSerializer;
 use Tcds\Io\Ray\Infrastructure\SequentialEventProcessor;
 
 // 1. Define a typed domain event
@@ -82,17 +83,17 @@ final readonly class OrderPlaced
 
 // 2. Wire up the store, publisher, and processor
 $store      = new InMemoryEventStore();
-$publisher  = new EventPublisher($store, new PublicPropertiesSerializer());
+$publisher  = new EventPublisher($store, new JacksonSerializer());
 
 $subscribers = new EventSubscriberMap();
-$processor   = new SequentialEventProcessor($subscribers, hydrator: new RawPayloadHydrator());
+$processor   = new SequentialEventProcessor($subscribers); // JacksonHydrator is the default
 
-// 3. Register subscribers
-$subscribers->subscribe('OrderPlaced', function (object $event): void {
+// 3. Register subscribers — type-hint the domain event class to receive it fully hydrated
+$subscribers->subscribe('OrderPlaced', function (OrderPlaced $event): void {
     echo "Order placed: " . $event->orderId . PHP_EOL;
 });
 
-$subscribers->subscribe('OrderPlaced', function (object $event): void {
+$subscribers->subscribe('OrderPlaced', function (OrderPlaced $event): void {
     echo "Sending confirmation email..." . PHP_EOL;
 });
 
@@ -165,14 +166,14 @@ interface EventSerializer
 }
 ```
 
-### PublicPropertiesSerializer *(built-in)*
+### JacksonSerializer *(built-in)*
 
-Derives the event name from the short class name (PascalCase) and serializes all public properties as the payload:
+Derives the event name from the short class name (PascalCase) and uses Jackson's `ArrayObjectMapper` to serialize the object to an array payload. Handles constructor-promoted properties, nested objects, and collections automatically:
 
 ```php
-use Tcds\Io\Ray\Infrastructure\PublicPropertiesSerializer;
+use Tcds\Io\Ray\Infrastructure\JacksonSerializer;
 
-$publisher = new EventPublisher($store, new PublicPropertiesSerializer());
+$publisher = new EventPublisher($store, new JacksonSerializer());
 
 // OrderPlaced { orderId: 42, total: 99.99 }
 // → SerializedEvent { name: 'OrderPlaced', payload: ['orderId' => 42, 'total' => 99.99] }
@@ -218,16 +219,28 @@ interface EventHydrator
 }
 ```
 
-### RawPayloadHydrator *(built-in)*
+### JacksonHydrator *(built-in, default)*
 
-Casts the raw payload array to a generic `stdClass` object. Useful for simple use-cases and tests:
+Inspects the subscriber's first parameter type-hint via reflection and delegates reconstruction to Jackson's `ArrayObjectMapper`:
+
+- **Typed class** (`OrderPlaced $event`) — maps the payload array to a fully hydrated instance of that class, including nested objects
+- **`object` or no type-hint** — falls back to a plain `stdClass` cast of the payload
+
+Because reconstruction is driven by each subscriber's own type-hint, different listeners for the same event can each receive a different type with no extra wiring:
 
 ```php
-use Tcds\Io\Ray\Infrastructure\RawPayloadHydrator;
+// JacksonHydrator is the default — no explicit argument needed
+$processor = new SequentialEventProcessor($subscribers);
 
-$processor = new SequentialEventProcessor($subscribers, hydrator: new RawPayloadHydrator());
+// Typed subscriber receives a fully mapped OrderPlaced instance
+$subscribers->subscribe('order.placed', function (OrderPlaced $event): void {
+    echo $event->orderId; // int, not a stdClass property
+});
 
-// Subscriber receives (object) ['orderId' => 42, 'total' => 99.99]
+// Untyped subscriber receives a generic stdClass
+$subscribers->subscribe('order.placed', function (object $event): void {
+    echo $event->orderId; // stdClass property
+});
 ```
 
 ### Custom hydrator
@@ -379,6 +392,60 @@ class MyProcessor implements EventProcessor
     }
 }
 ```
+
+---
+
+## Silent event processing
+
+In local development and CI, letting a failing listener throw immediately is exactly what you want — fast, noisy feedback. In production the calculus is different: a single listener failure should not prevent the remaining listeners for that event from running, nor should it block every subsequent event in the queue. `SilentSequentialEventProcessor` wraps each listener dispatch in a try-catch, logs the failure, and carries on.
+
+```php
+use Tcds\Io\Ray\Infrastructure\SilentSequentialEventProcessor;
+
+$processor = new SilentSequentialEventProcessor($subscribers, $logger);
+$processor->process($store);
+```
+
+Each failure produces exactly one log entry per event–listener pair, so nothing is silently swallowed. Every exception is recorded with enough context to diagnose and replay the specific listener later:
+
+```
+Failed to dispatch event to listener.
+{
+    event:     "order.placed"
+    event_id:  "019612a3-..."
+    listener:  "App\Listeners\SendConfirmationEmail"  // or "Closure"
+    exception: RuntimeException: ...
+}
+```
+
+### PSR-3 logger
+
+`SilentSequentialEventProcessor` accepts any [PSR-3](https://www.php-fig.org/psr/psr-3/) `LoggerInterface`. php-ray ships no concrete logger — supply whichever one your application already uses:
+
+```php
+// Monolog
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+$logger = new Logger('ray');
+$logger->pushHandler(new StreamHandler('php://stderr'));
+
+$processor = new SilentSequentialEventProcessor($subscribers, $logger);
+```
+
+```php
+// Laravel (already PSR-3 compatible)
+$processor = new SilentSequentialEventProcessor($subscribers, app('log'));
+```
+
+### Choosing a processor per environment
+
+| Environment | Processor | Behaviour |
+|---|---|---|
+| Local / CI | `SequentialEventProcessor` | Any listener exception propagates immediately — nothing is hidden |
+| Production | `SilentSequentialEventProcessor` | A failing listener is logged and skipped; all other listeners and subsequent events continue processing |
+
+> **Coming soon:** Automatic retry and failure tracking will be added to the base processor. `SilentSequentialEventProcessor` is designed to remain the right choice for production once that lands — it already captures everything needed to identify and reprocess a specific failed listener.
 
 ---
 
