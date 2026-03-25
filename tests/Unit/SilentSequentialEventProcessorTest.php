@@ -68,10 +68,12 @@ class SilentSequentialEventProcessorTest extends TestCase
             ->method('error')
             ->with(
                 'Failed to dispatch event to listener.',
-                $this->callback(fn(array $context) => $context['event'] === 'order.placed'
-                    && $context['event_id'] === $event->id
-                    && $context['listener'] === 'Closure'
-                    && $context['exception'] === $exception),
+                [
+                    'event'     => 'order.placed',
+                    'event_id'  => $event->id,
+                    'listener'  => 'Closure',
+                    'exception' => $exception,
+                ],
             );
 
         $this->processor->process($this->store);
