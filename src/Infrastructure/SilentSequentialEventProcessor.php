@@ -17,9 +17,9 @@ readonly class SilentSequentialEventProcessor extends SequentialEventProcessor
      */
     public function __construct(
         EventSubscriberMap $subscribers,
-        HandlerResolver $resolver,
-        EventHydrator $hydrator,
         private LoggerInterface $logger,
+        HandlerResolver $resolver = new DefaultHandlerResolver(),
+        EventHydrator $hydrator = new JacksonHydrator(),
     ) {
         parent::__construct($subscribers, $resolver, $hydrator);
     }

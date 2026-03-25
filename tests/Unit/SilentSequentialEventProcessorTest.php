@@ -30,9 +30,8 @@ class SilentSequentialEventProcessorTest extends TestCase
 
         $this->processor = new SilentSequentialEventProcessor(
             $this->subscribers,
-            new \Tcds\Io\Ray\Infrastructure\DefaultHandlerResolver(),
-            $hydrator,
             $this->logger,
+            hydrator: $hydrator,
         );
     }
 
