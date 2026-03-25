@@ -37,17 +37,29 @@ class SilentSequentialEventProcessorTest extends TestCase
 
     public function test_continues_processing_remaining_subscribers_after_one_throws(): void
     {
-        $this->store->add(TestEventFactory::retrieveOrderPlaced());
+        $event = TestEventFactory::retrieveOrderPlaced();
+        $this->store->add($event);
 
+        $exception = new RuntimeException('Listener error');
         $secondCalled = false;
-        $this->subscribers->subscribe('order.placed', function () {
-            throw new RuntimeException('Listener error');
+        $this->subscribers->subscribe('order.placed', function () use ($exception) {
+            throw $exception;
         });
         $this->subscribers->subscribe('order.placed', function () use (&$secondCalled) {
             $secondCalled = true;
         });
 
-        $this->logger->expects($this->once())->method('error');
+        $this->logger->expects($this->once())
+            ->method('error')
+            ->with(
+                'Failed to dispatch event to listener.',
+                [
+                    'event'     => 'order.placed',
+                    'event_id'  => $event->id,
+                    'listener'  => 'Closure',
+                    'exception' => $exception,
+                ],
+            );
 
         $this->processor->process($this->store);
 
@@ -108,7 +120,8 @@ class SilentSequentialEventProcessorTest extends TestCase
 
     public function test_logs_class_name_when_subscriber_is_a_class_string(): void
     {
-        $this->store->add(TestEventFactory::retrieveOrderPlaced());
+        $event = TestEventFactory::retrieveOrderPlaced();
+        $this->store->add($event);
 
         $this->subscribers->subscribe('order.placed', ThrowingListener::class);
 
@@ -116,8 +129,12 @@ class SilentSequentialEventProcessorTest extends TestCase
             ->method('error')
             ->with(
                 'Failed to dispatch event to listener.',
-                $this->callback(fn(array $context) => $context['event'] === 'order.placed'
-                    && $context['listener'] === ThrowingListener::class),
+                [
+                    'event'     => 'order.placed',
+                    'event_id'  => $event->id,
+                    'listener'  => ThrowingListener::class,
+                    'exception' => new RuntimeException('ThrowingListener always fails.'),
+                ]
             );
 
         $this->processor->process($this->store);
@@ -125,18 +142,30 @@ class SilentSequentialEventProcessorTest extends TestCase
 
     public function test_continues_processing_subsequent_events_after_failure(): void
     {
-        $this->store->add(TestEventFactory::retrieveOrderPlaced());
+        $firstEvent = TestEventFactory::retrieveOrderPlaced();
+        $this->store->add($firstEvent);
         $this->store->add(TestEventFactory::retrieveOrderPlaced(['n' => 2]));
 
+        $exception = new RuntimeException('Missing n');
         $received = [];
-        $this->subscribers->subscribe('order.placed', function (object $e) use (&$received) {
+        $this->subscribers->subscribe('order.placed', function (object $e) use (&$received, $exception) {
             if (!isset($e->n)) {
-                throw new RuntimeException('Missing n');
+                throw $exception;
             }
             $received[] = $e->n;
         });
 
-        $this->logger->expects($this->once())->method('error');
+        $this->logger->expects($this->once())
+            ->method('error')
+            ->with(
+                'Failed to dispatch event to listener.',
+                [
+                    'event'     => 'order.placed',
+                    'event_id'  => $firstEvent->id,
+                    'listener'  => 'Closure',
+                    'exception' => $exception,
+                ],
+            );
 
         $this->processor->process($this->store);
 
